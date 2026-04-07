@@ -322,10 +322,6 @@ def render_listing_explorer(data: pd.DataFrame) -> None:
 
 def main() -> None:
     st.title("Airbnb Listing Price Analysis Dashboard")
-    st.write(
-        "Explore pricing patterns, availability trends, and neighborhood-level listing distribution "
-        "with dynamic filters for hosts, travelers, and analysts."
-    )
 
     if not DATA_PATH.exists():
         st.error(f"Dataset not found: {DATA_PATH.name}")
