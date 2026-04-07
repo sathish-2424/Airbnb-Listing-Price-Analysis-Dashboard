@@ -35,22 +35,6 @@ def load_data(path: Path) -> pd.DataFrame:
     return data.dropna(subset=["price"])
 
 
-@st.cache_data
-def make_summary(data: pd.DataFrame) -> pd.DataFrame:
-    return (
-        data.groupby(["neighbourhood_group", "neighbourhood"], observed=False)
-        .agg(
-            listings=("id", "count"),
-            average_price=("price", "mean"),
-            median_price=("price", "median"),
-            average_reviews=("number_of_reviews", "mean"),
-            average_availability=("availability_365", "mean"),
-        )
-        .reset_index()
-        .sort_values(["listings", "average_price"], ascending=[False, False])
-    )
-
-
 def format_money(value: float) -> str:
     return f"${value:,.0f}"
 
@@ -123,186 +107,26 @@ def metric_row(data: pd.DataFrame) -> None:
     col5.metric("Avg availability", f"{data['availability_365'].mean():.0f} days")
 
 
-def render_market_charts(data: pd.DataFrame) -> None:
+def render_main_chart(data: pd.DataFrame) -> None:
     borough_price = (
         data.groupby("neighbourhood_group", observed=False)
         .agg(average_price=("price", "mean"), listings=("id", "count"))
         .reset_index()
         .sort_values("average_price", ascending=False)
     )
-    room_mix = data["room_type"].value_counts().reset_index()
-    room_mix.columns = ["room_type", "listings"]
 
-    left, right = st.columns(2)
-    with left:
-        fig = px.bar(
-            borough_price,
-            x="neighbourhood_group",
-            y="average_price",
-            color="neighbourhood_group",
-            text=borough_price["average_price"].map(format_money),
-            title="Average price by borough",
-            labels={"neighbourhood_group": "Borough", "average_price": "Average price"},
-        )
-        fig.update_traces(textposition="outside")
-        fig.update_layout(showlegend=False, yaxis_tickprefix="$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        fig = px.pie(
-            room_mix,
-            names="room_type",
-            values="listings",
-            hole=0.45,
-            title="Listing mix by room type",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-
-def render_price_analysis(data: pd.DataFrame) -> None:
-    left, right = st.columns(2)
-    with left:
-        fig = px.histogram(
-            data,
-            x="price",
-            color="room_type",
-            nbins=40,
-            marginal="box",
-            title="Price distribution by room type",
-            labels={"price": "Price", "room_type": "Room type"},
-        )
-        fig.update_layout(yaxis_title="Listings", xaxis_tickprefix="$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        fig = px.box(
-            data,
-            x="neighbourhood_group",
-            y="price",
-            color="room_type",
-            points=False,
-            title="Price spread by borough and room type",
-            labels={"neighbourhood_group": "Borough", "price": "Price"},
-        )
-        fig.update_layout(yaxis_tickprefix="$")
-        st.plotly_chart(fig, use_container_width=True)
-
-
-def render_neighbourhood_analysis(data: pd.DataFrame) -> None:
-    max_neighbourhood_count = max(10, int(data["neighbourhood"].value_counts().max()))
-    min_listings = st.slider(
-        "Minimum listings required for neighbourhood ranking",
-        min_value=10,
-        max_value=max_neighbourhood_count,
-        value=min(100, max_neighbourhood_count),
-        step=10,
+    fig = px.bar(
+        borough_price,
+        x="neighbourhood_group",
+        y="average_price",
+        color="neighbourhood_group",
+        text=borough_price["average_price"].map(format_money),
+        title="Average price by borough",
+        labels={"neighbourhood_group": "Borough", "average_price": "Average price"},
     )
-
-    neighbourhood_summary = make_summary(data)
-    ranked = neighbourhood_summary[neighbourhood_summary["listings"] >= min_listings]
-
-    left, right = st.columns(2)
-    with left:
-        top_price = ranked.nlargest(15, "median_price").sort_values("median_price")
-        fig = px.bar(
-            top_price,
-            x="median_price",
-            y="neighbourhood",
-            color="neighbourhood_group",
-            orientation="h",
-            title="Top neighbourhoods by median price",
-            labels={"median_price": "Median price", "neighbourhood": "Neighbourhood"},
-        )
-        fig.update_layout(xaxis_tickprefix="$")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        top_supply = neighbourhood_summary.nlargest(15, "listings").sort_values("listings")
-        fig = px.bar(
-            top_supply,
-            x="listings",
-            y="neighbourhood",
-            color="neighbourhood_group",
-            orientation="h",
-            title="Top neighbourhoods by listing count",
-            labels={"listings": "Listings", "neighbourhood": "Neighbourhood"},
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-
-def render_demand_analysis(data: pd.DataFrame) -> None:
-    scatter_sample = data.sample(min(len(data), 5000), random_state=7)
-    fig = px.scatter(
-        scatter_sample,
-        x="availability_365",
-        y="price",
-        color="room_type",
-        size="number_of_reviews",
-        hover_data=["name", "neighbourhood_group", "neighbourhood", "minimum_nights"],
-        opacity=0.55,
-        title="Price, availability, and review activity",
-        labels={
-            "availability_365": "Availability in next 365 days",
-            "price": "Price",
-            "number_of_reviews": "Reviews",
-        },
-    )
-    fig.update_layout(yaxis_tickprefix="$")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(showlegend=False, yaxis_tickprefix="$")
     st.plotly_chart(fig, use_container_width=True)
-
-    demand = (
-        data.groupby(["neighbourhood_group", "room_type"], observed=False)
-        .agg(
-            listings=("id", "count"),
-            median_price=("price", "median"),
-            avg_reviews_per_month=("reviews_per_month", "mean"),
-            avg_availability=("availability_365", "mean"),
-        )
-        .reset_index()
-        .sort_values("avg_reviews_per_month", ascending=False)
-    )
-    st.dataframe(
-        demand,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "median_price": st.column_config.NumberColumn("Median price", format="$%d"),
-            "avg_reviews_per_month": st.column_config.NumberColumn("Avg reviews/month", format="%.2f"),
-            "avg_availability": st.column_config.NumberColumn("Avg availability", format="%.0f days"),
-        },
-    )
-
-
-def render_listing_table(data: pd.DataFrame) -> None:
-    sort_column = st.selectbox(
-        "Sort listings by",
-        ["price", "number_of_reviews", "reviews_per_month", "availability_365", "minimum_nights"],
-    )
-    sort_order = st.radio("Sort order", ["Descending", "Ascending"], horizontal=True)
-
-    table = data.sort_values(sort_column, ascending=sort_order == "Ascending")[
-        [
-            "name",
-            "neighbourhood_group",
-            "neighbourhood",
-            "room_type",
-            "price",
-            "minimum_nights",
-            "number_of_reviews",
-            "reviews_per_month",
-            "availability_365",
-        ]
-    ]
-    st.dataframe(
-        table,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "price": st.column_config.NumberColumn("Price", format="$%d"),
-            "reviews_per_month": st.column_config.NumberColumn("Reviews/month", format="%.2f"),
-            "availability_365": st.column_config.NumberColumn("Availability", format="%d days"),
-        },
-    )
 
 
 def main() -> None:
@@ -322,19 +146,7 @@ def main() -> None:
 
     metric_row(filtered)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["Market overview", "Price analysis", "Neighbourhoods", "Demand signals", "Listings"]
-    )
-    with tab1:
-        render_market_charts(filtered)
-    with tab2:
-        render_price_analysis(filtered)
-    with tab3:
-        render_neighbourhood_analysis(filtered)
-    with tab4:
-        render_demand_analysis(filtered)
-    with tab5:
-        render_listing_table(filtered)
+    render_main_chart(filtered)
 
 
 if __name__ == "__main__":
